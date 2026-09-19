@@ -1,0 +1,3 @@
+﻿# API anahtari ve kisisel ayarlar git'e girmez
+app/key.local.js
+app/api-config.js
