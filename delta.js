@@ -55,30 +55,23 @@ $("d-ocr-form").onclick = async () => {
   if (!bul.length) { $("d-sonuc").textContent = "Formül bulunamadı. Ham metin:\n" + metin.slice(0, 800); return; }
   const gor = new Set(); const sat = [];
   bul.forEach(m => { if (!gor.has(m[1])) { gor.add(m[1]); sat.push({ id: m[1], g: parseFloat(m[2].replace(",", ".")) }); } });
-  // Toplam satırı: "Toplam miktar" İÇEREN satırdaki İLK sayı (İstenilen toplam).
-  // "Toplam Tutar" başlığı + toner no (4004) eşleşmesin diye satır bazlı bakılır.
-  // Güvenlik: ölçek çarpanı 0.05–20 dışındaysa ölçekleme YAPILMAZ.
+  // Sade kural: ne görülürse o yazılır, ölçekle oynanmaz.
+  // Toplam satırı ("Toplam miktar" içeren satır) yalnızca kontrol için okunur.
   let not = "";
-  let hedef = 0, toplamSatiri = "";
+  let etiket = 0;
   metin.split("\n").forEach(s => {
-    if (/toplam/i.test(s) && /miktar/i.test(s) && !hedef) {
+    if (/toplam/i.test(s) && /miktar/i.test(s) && !etiket) {
       const m = s.match(/(\d+(?:[.,]\d+)?)/);
-      if (m) { hedef = parseFloat(m[1].replace(",", ".")); toplamSatiri = s.trim(); }
+      if (m) etiket = parseFloat(m[1].replace(",", "."));
     }
   });
   const hamTop = sat.reduce((a, s) => a + s.g, 0);
-  if (hedef > 0 && hedef < 10000 && hamTop > 0) {
-    if (!/\d+[.,]\d+/.test(toplamSatiri) && hamTop > 150 && Math.abs(hamTop - hedef) / hedef < 0.3) {
-      hedef = hedef / 10;
-      not += `\n⚖ Toplamda virgül yutulmuş ("${toplamSatiri.slice(0, 40)}" → ${hedef} g kabul).`;
-    }
-    const f = hedef / hamTop;
-    if (f > 0.05 && f < 20 && Math.abs(hamTop - hedef) / hedef > 0.05) {
-      sat.forEach(s => s.g = s.g * f);
-      not += `\n⚖ Toplam etikete göre ölçeklendi (ham ${hamTop.toFixed(0)} → ${hedef} g).`;
-    } else if (!(f > 0.05 && f < 20)) {
-      not += `\n⚠ Toplam satırı (${hedef}) ile okunan (${hamTop.toFixed(0)}) uyuşmuyor — ölçekleme YAPILMADI, elle kontrol et.`;
-    }
+  if (etiket > 0) {
+    const fark = Math.abs(hamTop - etiket) / etiket;
+    not += fark < 0.06 ? `\n✓ Okunan toplam (${hamTop.toFixed(1)}) etiketle (${etiket}) uyuşuyor.`
+      : `\n⚠ Okunan toplam (${hamTop.toFixed(1)}) etiketle (${etiket}) UYUŞMUYOR — satırları gözle düzelt.`;
+  } else {
+    not += `\nOkunan toplam: ${hamTop.toFixed(1)} g.`;
   }
   $("d-form").value = sat.map(s => `${s.id} = ${s.g.toFixed(1)}`).join("\n");
   const sonTop = sat.reduce((a, s) => a + s.g, 0);
