@@ -1,6 +1,9 @@
 // RENK ASİSTANI v2 — TAHMİNİ analiz + formül üretici (ölçüm değildir)
 let ALL = {}, CALISMA = {}; // CALISMA: {tonerId: gram}
 const $ = id => document.getElementById(id);
+// Veritabani ASCII-katlanmis yazar (kirmizi/sari/yesil), kod gercek Turkce.
+// Karsilastirma öncesi iki taraf da katlanir — yoksa eslesme tutmaz.
+const fold = s => (s || "").toLocaleLowerCase("tr").replace(/ı/g, "i").replace(/ş/g, "s").replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ö/g, "o").replace(/ç/g, "c");
 // Sade soru dili: tek dokunuşluk seçenekler (varsayılan = sorun yok)
 const S = { onL: "uygun", altL: "uygun", onY: "degismesin", altY: "degismesin", onK: "hayir", altK: "hayir", met: "ayni" };
 const YON_ETIKET = { degismesin: "Değişmesin", kirmizi: "Kırmızıya", turuncu: "Turuncuya", sari: "Sarıya", yesil: "Yeşile", mavi: "Maviye", mor: "Mora" };
@@ -23,7 +26,7 @@ seg("seg-onK", [["hayir", "Hayır"], ["evet", "Evet, temizle"]], "hayir", "onK")
 seg("seg-altK", [["hayir", "Hayır"], ["evet", "Evet, temizle"]], "hayir", "altK");
 seg("seg-met", [["ince", "Daha ince"], ["ayni", "Aynı"], ["iri", "Daha iri"]], "ayni", "met");
 const hedefYonler = () => new Set([S.onY, S.altY].filter(v => v !== "degismesin").map(v => YON_KOK[v]));
-const taneTercihi = () => S.met === "iri" ? "İRİ" : S.met === "ince" ? "KÜÇÜK" : "";
+const taneTercihi = () => S.met === "iri" ? "IRI" : S.met === "ince" ? "KUCUK" : "";
 // ---------- DB ----------
 async function yukleDB() {
   const kur = arr => { arr.forEach(t => ALL[t.toner_id] = t); tonerChipleriKur(); };
@@ -134,11 +137,11 @@ function adayPuanla(t, aile, canli, efektli) {
   if (!efektli && t.solid_usage === false) return -99;
   if (["4200", "4800", "4840", "4198"].includes(t.toner_id)) return -99; // zemin ayrı hesaplanır
   let p = 0;
-  const pig = t.pigment_color || "", fc = t.face_color || "", fd = t.face_direction || "", fl = t.flip_color || "";
-  if (pig.includes(aile)) p += 3; else if (fc.includes(aile)) p += 2;
-  if (fd.includes(aile)) p += 1;
-  if (fl.includes(aile)) p += 1;
-  const fcClean = t.face_cleanliness || "";
+  const pig = fold(t.pigment_color), fc = fold(t.face_color), fd = fold(t.face_direction), fl = fold(t.flip_color), al = fold(aile);
+  if (pig.includes(al)) p += 3; else if (fc.includes(al)) p += 2;
+  if (fd.includes(al)) p += 1;
+  if (fl.includes(al)) p += 1;
+  const fcClean = fold(t.face_cleanliness);
   if (canli === "temiz" && fcClean.startsWith("temiz")) p += 2;
   if (canli === "kirli" && fcClean.includes("kirli")) p += 2;
   if (efektli && t.effect_usage) p += 1;
@@ -183,13 +186,13 @@ $("b-uret").onclick = async () => {
   }
   // --- efekt (tane tercihine göre, 6. kart) ---
   if (efektli) {
-    const metalId = tane.includes("İRİ") ? "4004" : tane.includes("KÜÇÜK") ? "4001" : tane.includes("YOĞUN") ? "4003" : "4003";
+    const metalId = tane.includes("IRI") ? "4004" : tane.includes("KUCUK") ? "4001" : tane.includes("YOGUN") ? "4003" : "4003";
     const mt = ALL[metalId];
     koy(metalId, tip === "3katli" ? 6 : 12, `Metalik iskelet (${mt.particle_size}, ${mt.face_cleanliness})`, "ORTA");
     if (tip.includes("sedef") || tip === "3katli") {
       const sedefAdays = Object.values(ALL).filter(t => t.pigment_family === "sedef" && (t.face_color || "").includes(hedefAile === "beyaz" ? "beyaz" : hedefAile));
       const st = sedefAdays.sort((a, b) => {
-        const sk = x => (tane.includes("İRİ") && (x.particle_size || "").includes("iri")) ? 0 : (tane.includes("KÜÇÜK") && (x.particle_size || "").includes("ince")) ? 0 : 1;
+        const sk = x => (tane.includes("IRI") && (x.particle_size || "").includes("iri")) ? 0 : (tane.includes("KUCUK") && (x.particle_size || "").includes("ince")) ? 0 : 1;
         return sk(a) - sk(b);
       })[0] || ALL["4910"];
       koy(st.toner_id, 7, `Sedef derinliği: ${pdfOzet(st)} — ${st.technical_notes}`, "ORTA");
@@ -316,7 +319,7 @@ $("b-analiz").onclick = () => {
   if (hatalar.length) out += "\n⚠ " + hatalar.join("\n");
   $("formul-sonuc").textContent = out;
 };
-function havuz(t) { return ((t.face_color || "") + " " + (t.face_direction || "") + " " + (t.flip_color || "")).toLocaleLowerCase("tr"); }
+function havuz(t) { return fold((t.face_color || "") + " " + (t.face_direction || "") + " " + (t.flip_color || "")); }
 $("b-oner").onclick = async () => {
   const { kalemler } = formuluOku($("f-text").value);
   if (!kalemler.length) { $("sonuc").textContent = "Önce formül koy (1. veya 2. adım)."; return; }
@@ -335,16 +338,16 @@ $("b-oner").onclick = async () => {
   const onKok = S.onY === "degismesin" ? null : YON_KOK[S.onY];
   const altKok = S.altY === "degismesin" ? null : YON_KOK[S.altY];
   const faceSkor = (t, k) => {
-    if (!k) return 0; let p = 0;
-    const pig = t.pigment_color || "", fc = t.face_color || "", fd = t.face_direction || "";
+    if (!k) return 0; let p = 0; k = fold(k);
+    const pig = fold(t.pigment_color), fc = fold(t.face_color), fd = fold(t.face_direction);
     if (pig.includes(k)) p += 3; else if (fc.includes(k)) p += 2;
     if (fd.includes(k)) p += 1;
-    if (S.onK === "evet" && (t.face_cleanliness || "").startsWith("temiz")) p += 1;
+    if (S.onK === "evet" && fold(t.face_cleanliness).startsWith("temiz")) p += 1;
     return p;
   };
   const flipSkor = (t, k) => {
-    if (!k) return 0; let p = 0;
-    if ((t.flip_color || "").includes(k)) p += 2;
+    if (!k) return 0; let p = 0; k = fold(k);
+    if (fold(t.flip_color).includes(k)) p += 2;
     return p;
   };
   const ZEMIN = ["4200", "4800", "4840", "4198", "4000", "4110", "4120", "4010"];
@@ -456,9 +459,9 @@ $("b-kaydet").onclick = () => {
   $("gecmis").textContent = a.length + " kayıt var. Son: " + k.t + " " + k.arac;
 };
 $("toner-q").addEventListener("input", e => {
-  const q = e.target.value.toLocaleLowerCase("tr").trim();
+  const q = fold(e.target.value).trim();
   if (!q) { $("toner-sonuc").textContent = "Aramak için yaz."; return; }
-  const bul = Object.values(ALL).filter(t => [t.toner_id, t.pigment_color, t.face_color, t.face_direction, t.flip_color, t.transparency, t.particle_size, t.technical_notes].filter(Boolean).join(" ").toLocaleLowerCase("tr").includes(q)).slice(0, 8);
+  const bul = Object.values(ALL).filter(t => fold([t.toner_id, t.pigment_color, t.face_color, t.face_direction, t.flip_color, t.transparency, t.particle_size, t.technical_notes].filter(Boolean).join(" ")).includes(q)).slice(0, 8);
   $("toner-sonuc").textContent = bul.length ? bul.map(t => `${t.toner_id}${t.alias_of ? " (=" + t.alias_of + ")" : ""}: ${t.pigment_color}, face ${t.face_color}/${t.face_direction || t.face_cleanliness || "?"}, flip ${t.flip_color}/${t.flip_lightness || "?"} — ${t.technical_notes}`).join("\n\n") : "Bulunamadı. Farklı kelime dene.";
 });
 fetch("../data/VERSION.json").then(r => r.json()).then(v => { $("surum").textContent = `Renk Ustası v${v.uygulama} • Veri v${v.veri} • ${v.not || ""}`; }).catch(() => {});
