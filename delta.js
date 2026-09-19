@@ -1,6 +1,8 @@
 // DELTA DÜZELTME — cihaz değerinden toner önerisi (Mixit bağımsız, TAHMİNİ)
 // ΔE: CIE76. Yön kuralları Dynacoat MM PDF + saha kayıtları.
 const $ = id => document.getElementById(id);
+// Veritabani katlanmis yazar (kirmizi/sari/yesil) — eslesme öncesi katla.
+const fold = s => (s || "").toLocaleLowerCase("tr").replace(/ı/g, "i").replace(/ş/g, "s").replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ö/g, "o").replace(/ç/g, "c");
 const ALL = {}; (window.TONER_DATA || []).forEach(t => ALL[t.toner_id] = t);
 const ACILAR = ["25", "45", "110"];
 const AD = { "25": "ön", "45": "orta", "110": "yan" };
@@ -19,7 +21,7 @@ function okuFormul() {
   });
   return out;
 }
-const havuz = t => ((t.face_color || "") + " " + (t.face_direction || "") + " " + (t.flip_color || "")).toLocaleLowerCase("tr");
+const havuz = t => fold((t.face_color || "") + " " + (t.face_direction || "") + " " + (t.flip_color || ""));
 
 // ---------- Fotoğraftan okuma: AI yerleştirir, kullanıcı doğrular ----------
 const gemKey = () => ((window.GEMINI_KEY || "").trim() || localStorage.getItem("gem-key") || "");
@@ -65,7 +67,9 @@ $("d-ocr-form").onclick = async () => {
     }
   }
   $("d-form").value = sat.map(s => `${s.id} = ${s.g.toFixed(1)}`).join("\n");
-  $("d-sonuc").textContent = `Fotoğraftan ${sat.length} satır okundu — KONTROL ET, eksik satır varsa elle ekle:${not}\n` + sat.map(s => `${s.id} = ${s.g.toFixed(1)}`).join("\n");
+  const sonTop = sat.reduce((a, s) => a + s.g, 0);
+  $("d-toplam").value = Math.round(sonTop);
+  $("d-sonuc").textContent = `Fotoğraftan ${sat.length} satır okundu, toplam ${sonTop.toFixed(1)} g ("Toplam (g)" kutusuna yazıldı) — KONTROL ET, eksik satır varsa elle ekle:${not}\n` + sat.map(s => `${s.id} = ${s.g.toFixed(1)}`).join("\n") + `\n\nHam metin:\n` + metin.slice(0, 400);
 };
 $("d-ocr-lab").onclick = async () => {
   const f = $("d-foto-lab").files[0];
@@ -76,17 +80,11 @@ $("d-ocr-lab").onclick = async () => {
   const ham = $("d-ocr-ham");
   ham.textContent = "OCR ham metin (kontrol et):\n" + (metin || "(boş)").slice(0, 1200);
   let bolum = "fark", refN = 0, ornN = 0;
-  const deltaSat = {}, supheliler = [];
-  metin.split("\n").map(s => s.trim()).filter(Boolean).forEach(s => {
-    const k = s.toLocaleLowerCase("tr");
-    if (k.includes("referans")) { bolum = "ref"; return; }
-    if (k.includes("örnek")) { bolum = "orn"; return; }
-    const m = s.match(/^(25|45|110)\b/);
-    if (!m) return;
-    // OCR tamiri: "*1027"→-10.27 ; "1251"→12.51 (virgülsüz 3-5 haneye sona 2 kala virgül)
-    // Tamir gören kutular şüpheli işaretlenir — kullanıcı doğrular.
+  const deltaSat = {}, supheliler = [], kaynak = {};
+  const beslik = { ref: [], orn: [], fark: [] }; // açısız ekranlar için yedek
+  const tamir = (s, etiketli) => {
     const dec = [];
-    s.split(/\s+/).slice(1).forEach(w => {
+    s.split(/\s+/).slice(etiketli ? 1 : 0).forEach(w => {
       let neg = false, sup = false;
       if (/^[*\-–]/.test(w)) { neg = true; sup = true; w = w.replace(/^[*\-–]/, ""); }
       const m2 = w.match(/(\d+)[.,](\d+)/);
@@ -94,21 +92,67 @@ $("d-ocr-lab").onclick = async () => {
       const d = w.replace(/\D/g, "");
       if (d.length >= 3 && d.length <= 5) { const v = parseFloat(d.slice(0, -2) + "." + d.slice(-2)); dec.push({ v: neg ? -v : v, sup: true }); }
     });
-    if (dec.length === 6 && bolum === "fark") { deltaSat[m[1]] = dec.map(x => x.v); return; }
-    if (dec.length < 4) return; // en az L,a,b olmalı
-    const pre = bolum === "ref" ? "r" : "s";
-    const eksikSayi = dec.length < 5;
+    return dec;
+  };
+  const yerlestir = (pre, g, dec, hamSatir, eksik) => {
     try {
       [["L", 0], ["a", 1], ["b", 2]].forEach(([h, i]) => {
-        const el = $(`${pre}-${h}-${m[1]}`);
+        const el = $(`${pre}-${h}-${g}`);
         el.value = dec[i].v;
-        el.classList.toggle("supheli", dec[i].sup || eksikSayi);
-        if (dec[i].sup || eksikSayi) supheliler.push(`${pre}-${h}-${m[1]}`);
+        el.classList.toggle("supheli", dec[i].sup || eksik);
+        if (dec[i].sup || eksik) supheliler.push(`${pre}-${h}-${g}`);
       });
+      kaynak[`${pre}-${g}`] = hamSatir.slice(0, 42);
     } catch (e) {}
-    if (bolum === "ref") refN++; else ornN++;
+  };
+  metin.split("\n").map(s => s.trim()).filter(Boolean).forEach(s => {
+    const k = s.toLocaleLowerCase("tr");
+    if (k.includes("referans")) { bolum = "ref"; return; }
+    if (k.includes("örnek")) { bolum = "orn"; return; }
+    const m = s.match(/^(25|45|110)\b/);
+    // OCR tamiri: "*1027"→-10.27 ; "1251"→12.51 (virgülsüz 3-5 haneye sona 2 kala virgül)
+    // Tamir gören kutular şüpheli işaretlenir — kullanıcı doğrular.
+    const dec = tamir(s, !!m);
+    if (dec.length === 6 && (m || bolum === "fark")) {
+      if (m) deltaSat[m[1]] = dec.map(x => x.v);
+      else beslik.fark.push(dec.map(x => x.v));
+      return;
+    }
+    if (dec.length < 4) return;
+    if (m) {
+      // açı etiketli satır: doğrudan yerleştir
+      const pre = bolum === "ref" ? "r" : "s";
+      yerlestir(pre, m[1], dec, s, dec.length < 5);
+      if (bolum === "ref") refN++; else ornN++;
+    } else if (bolum !== "fark") {
+      // açısız satır: bölüm sırasına göre yedek listeye
+      beslik[bolum].push({ dec, ham: s });
+    }
   });
+  // YEDEK: hiç açı etiketli satır yoksa (bu ekran gibi) bölüm sırası + L büyüklüğüne göre ata:
+  // ilk üçlü referans, sonraki üçlü örnek; her üçlüde L büyükten küçüğe = 25/45/110
+  const sirala = ["25", "45", "110"];
+  const ata = (liste, pre) => {
+    liste.slice(0, 3).map(x => x.dec ? x : { dec: x, ham: "" })
+      .sort((a, b) => b.dec[0].v - a.dec[0].v)
+      .forEach((x, i) => yerlestir(pre, sirala[i], x.dec, x.ham || "sıra-tahmini", x.dec.length < 5));
+    return Math.min(3, liste.length);
+  };
+  if (refN + ornN === 0) {
+    const havuz5 = [];
+    metin.split("\n").forEach(s => { const d = tamir(s.trim(), false); if (d.length >= 4 && d.length <= 5) havuz5.push(d); });
+    if (havuz5.length >= 3) {
+      refN = ata(havuz5.slice(0, 3), "r");
+      if (havuz5.length >= 6) ornN = ata(havuz5.slice(3, 6), "s");
+      Object.keys(deltaSat).length === 0 && beslik.fark.slice(0, 3).forEach((d, i) => deltaSat[sirala[i]] = d);
+    }
+  } else {
+    if (beslik.ref.length >= 3 && refN === 0) refN = ata(beslik.ref, "r");
+    if (beslik.orn.length >= 3 && ornN === 0) ornN = ata(beslik.orn, "s");
+  }
   ham.textContent += `\n\nYerleştirilen: referans ${refN}, örnek ${ornN} satır.`;
+  const kkeys = Object.keys(kaynak).sort();
+  if (kkeys.length) ham.textContent += `\nNereden alındı: ` + kkeys.map(k => `${k} ← "${kaynak[k]}"`).join(" | ");
   const ac = Object.keys(deltaSat).sort();
   if (ac.length) ham.textContent += `\nMixit delta satırları (karşılaştır): ` + ac.map(g => `${g}° ΔE=${deltaSat[g][0]} ΔL=${deltaSat[g][1]} Δa=${deltaSat[g][2]} Δb=${deltaSat[g][3]}`).join(" | ");
   if (supheliler.length) ham.textContent += `\n⚠ TURUNCU kutular tamir gördü (işaret/virgül) — ham metinle karşılaştırıp doğrula: ` + [...new Set(supheliler)].join(", ");
@@ -178,9 +222,10 @@ $("d-hesap").onclick = () => {
   };
   const yonDuzelt = (kokEkle, kokKis, etiket) => {
     // formülde fazla yöne çeken varsa kıs, eksik yönün toneri yoksa ekle
-    const kisen = Object.values(ALL).filter(t => uygun(t) && formda.includes(t.toner_id) && havuz(t).includes(kokKis) && !["4000", "4110", "4120", "4010", "4200", "4800", "4840", "4198"].includes(t.toner_id)).slice(0, 1);
+    const kk = fold(kokKis), ke = fold(kokEkle);
+    const kisen = Object.values(ALL).filter(t => uygun(t) && formda.includes(t.toner_id) && havuz(t).includes(kk) && !["4000", "4110", "4120", "4010", "4200", "4800", "4840", "4198"].includes(t.toner_id)).slice(0, 1);
     kisen.forEach(t => kayit(t, "Azalt", [0.003, 0.008], `${etiket}: ${kokKis} yön fazla.`));
-    const eksik = Object.values(ALL).filter(t => uygun(t) && !formda.includes(t.toner_id) && (t.pigment_color || "").includes(kokEkle)).sort((a, b) => ((b.face_cleanliness || "").startsWith("temiz") ? 1 : 0) - ((a.face_cleanliness || "").startsWith("temiz") ? 1 : 0)).slice(0, 1);
+    const eksik = Object.values(ALL).filter(t => uygun(t) && !formda.includes(t.toner_id) && fold(t.pigment_color || "").includes(ke)).sort((a, b) => (fold(b.face_cleanliness).startsWith("temiz") ? 1 : 0) - (fold(a.face_cleanliness).startsWith("temiz") ? 1 : 0)).slice(0, 1);
     if (!kisen.length) eksik.forEach(t => kayit(t, "Ekle", [0.002, 0.005], `${etiket}: ${kokEkle} yön eksik.`, true));
   };
   const e = (v, esik) => Math.abs(v) >= esik ? Math.sign(v) : 0;
@@ -225,12 +270,14 @@ $("d-hesap").onclick = () => {
     if (Math.abs(h.da) >= 0.5) s += h.da > 0 ? "KIRMIZIYA kaymış. " : "YEŞİLE kaymış. ";
     if (Math.abs(h.db) >= 0.5) s += h.db > 0 ? "SARIYA kaymış. " : "MAVİYE kaymış. ";
     if (h.dC <= -1) s += "Referanstan daha KİRLİ/mat görünüyor. ";
+    const oneri = adim.filter(a => a.includes(h.g + "°")).map(a => { const m = a.match(/^(4\d{3}) (Azalt|Artır|Ekle)/); return m ? `${m[1]} ${m[2]}` : ""; }).filter(Boolean);
+    if (oneri.length) s += `→ Bu açı için öneri: ${[...new Set(oneri)].join(", ")}. `;
     return s;
   };
   let acik = `<details class="acik"><summary>🔍 Sade dille anlat (dokunarak aç)</summary>`;
   if (hata.some(h => h.dE > 12 || Math.abs(h.dL) > 15 || Math.abs(h.da) > 15 || Math.abs(h.db) > 15))
     acik += `<b>⚠ Değerler olağandışı büyük — önce kutuları ham metinle karşılaştır. Eksi işareti yutulmuş olabilir; yanlış girişten çıkan öneri yanlış olur.</b><br><br>`;
-  acik += `Önce ${kotu.g}° düzelir, çünkü fark en büyük orada. Tek turda her açıyı kapatmaya çalışma.<br><br>`;
+  acik += `Önce ${kotu.g}° düzelir, çünkü fark en büyük orada. Tek turda her açıyı kapatmaya çalışma.<br>Açılar: 25° = üstten bakış (ön/face), 45° = orta bakış, 110° = yandan koyu bakış (flop). ΔE = o açıdaki toplam farkın tek sayısı.<br><br>`;
   acik += hata.map(cumle).join("<br>");
   acik += `<br><br><small>ΔL = açıklık (+açık / −koyu) • Δa = kırmızı(+) / yeşil(−) • Δb = sarı(+) / mavi(−) • ΔC eksi = kirli • ΔE 1'in altı iyi.</small></details>`;
   $("d-sonuc").innerHTML = out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + tablo + acik;
