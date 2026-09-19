@@ -252,14 +252,25 @@ $("b-ocr").onclick = async () => {
 
 // ---------- Gemini (ücretsiz, opsiyonel) ----------
 function gemKey() { return (window.GEMINI_KEY || "").trim() || localStorage.getItem("gem-key") || ""; }
-function backendAktifMi() { return !!((window.BACKEND_URL || "").trim() && !(window.BACKEND_URL || "").includes("SENIN-IDN")); }
+function backendAktifMi() {
+  const u = (window.BACKEND_URL || "").trim() || localStorage.getItem("backend-url") || "";
+  return !!(u && !u.includes("SENIN-IDN"));
+}
+function durumYaz() {
+  if (backendAktifMi()) $("key-durum").textContent = "AI açık (Apps Script backend — anahtar sunucuda).";
+  else if (gemKey()) $("key-durum").textContent = "AI açık (kişisel anahtar).";
+  else $("key-durum").textContent = "AI kapalı — kural motoru aktif.";
+}
 $("b-key").onclick = () => {
   const v = $("gem-key").value.trim();
+  const u = $("b-url").value.trim();
+  const k = $("b-kapi").value.trim();
   if (v) localStorage.setItem("gem-key", v);
-  $("key-durum").textContent = v ? "AI açık (anahtar bu telefonda saklı)." : "AI kapalı — kural motoru aktif.";
+  if (u) localStorage.setItem("backend-url", u);
+  if (k) localStorage.setItem("backend-kapi", k);
+  durumYaz();
 };
-if (backendAktifMi()) { $("key-durum").textContent = "AI açık (Apps Script backend — anahtar sunucuda)."; }
-else if (gemKey()) { $("key-durum").textContent = "AI açık (kişisel anahtar)."; }
+durumYaz();
 async function geminiYorum(prompt) {
   const b = await backendIste(prompt, "");
   if (b) return b;
