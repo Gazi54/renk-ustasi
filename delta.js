@@ -95,14 +95,15 @@ $("d-ocr-lab").onclick = async () => {
       if (d.length >= 3 && d.length <= 5) { const v = parseFloat(d.slice(0, -2) + "." + d.slice(-2)); dec.push({ v: neg ? -v : v, sup: true }); }
     });
     if (dec.length === 6 && bolum === "fark") { deltaSat[m[1]] = dec.map(x => x.v); return; }
-    if (dec.length !== 5) return; // 5 sayı = L,a,b,C,h satırı
-    const pre = bolum === "ref" ? "r" : "orn";
+    if (dec.length < 4) return; // en az L,a,b olmalı
+    const pre = bolum === "ref" ? "r" : "s";
+    const eksikSayi = dec.length < 5;
     try {
       [["L", 0], ["a", 1], ["b", 2]].forEach(([h, i]) => {
         const el = $(`${pre}-${h}-${m[1]}`);
         el.value = dec[i].v;
-        el.classList.toggle("supheli", dec[i].sup);
-        if (dec[i].sup) supheliler.push(`${pre}-${h}-${m[1]}`);
+        el.classList.toggle("supheli", dec[i].sup || eksikSayi);
+        if (dec[i].sup || eksikSayi) supheliler.push(`${pre}-${h}-${m[1]}`);
       });
     } catch (e) {}
     if (bolum === "ref") refN++; else ornN++;
@@ -112,6 +113,10 @@ $("d-ocr-lab").onclick = async () => {
   if (ac.length) ham.textContent += `\nMixit delta satırları (karşılaştır): ` + ac.map(g => `${g}° ΔE=${deltaSat[g][0]} ΔL=${deltaSat[g][1]} Δa=${deltaSat[g][2]} Δb=${deltaSat[g][3]}`).join(" | ");
   if (supheliler.length) ham.textContent += `\n⚠ TURUNCU kutular tamir gördü (işaret/virgül) — ham metinle karşılaştırıp doğrula: ` + [...new Set(supheliler)].join(", ");
   else ham.textContent += `\nKONTROL ET — yanlış kutuyu elle düzelt, sonra hesapla.`;
+  // geri-okuma: kutularda gerçekten ne var?
+  const dolu = [];
+  ["r", "s"].forEach(p => ["25", "45", "110"].forEach(g => { if ($(p + "-L-" + g).value !== "" && $(p + "-a-" + g).value !== "" && $(p + "-b-" + g).value !== "") dolu.push(p + "-" + g); }));
+  ham.textContent += `\nKutularda hazır açılar: ` + (dolu.length ? dolu.join(", ") : "hiçbiri — eksikleri elle yaz");
 };
 
 $("d-ornek").onclick = () => {
