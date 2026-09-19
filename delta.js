@@ -55,15 +55,20 @@ $("d-ocr-form").onclick = async () => {
   if (!bul.length) { $("d-sonuc").textContent = "Formül bulunamadı. Ham metin:\n" + metin.slice(0, 800); return; }
   const gor = new Set(); const sat = [];
   bul.forEach(m => { if (!gor.has(m[1])) { gor.add(m[1]); sat.push({ id: m[1], g: parseFloat(m[2].replace(",", ".")) }); } });
-  // Toplam etiketi varsa ölçeği ona uydur (virgül yutulması 10x hatasını düzeltir)
+  // Toplam etiketi varsa ölçeği ona uydur. "484" gibi virgülsüz toplamda
+  // virgül yutulmuş kabul edilir (ham toplam da aynı mertebedeyse).
   let not = "";
-  const top = metin.match(/toplam[^0-9]{0,30}(\d+[.,]\d+)/i);
+  const top = metin.match(/toplam[^0-9]{0,30}(\d+(?:[.,]\d+)?)/i);
   const hamTop = sat.reduce((a, s) => a + s.g, 0);
   if (top) {
-    const hedef = parseFloat(top[1].replace(",", "."));
+    let hedef = parseFloat(top[1].replace(",", "."));
+    if (!/[.,]/.test(top[1]) && hamTop > 150 && hedef > 0 && Math.abs(hamTop - hedef) / hedef < 0.3) {
+      hedef = hedef / 10;
+      not += `\n⚖ Toplamda virgül yutulmuş ("${top[1]}" → ${hedef} g kabul).`;
+    }
     if (hedef > 0 && Math.abs(hamTop - hedef) / hedef > 0.05) {
       sat.forEach(s => s.g = s.g * hedef / hamTop);
-      not = `\n⚖ Toplam etikete göre ölçeklendi (ham ${hamTop.toFixed(0)} → ${hedef} g).`;
+      not += `\n⚖ Toplam etikete göre ölçeklendi (ham ${hamTop.toFixed(0)} → ${hedef} g).`;
     }
   }
   $("d-form").value = sat.map(s => `${s.id} = ${s.g.toFixed(1)}`).join("\n");
