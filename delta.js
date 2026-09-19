@@ -217,5 +217,21 @@ $("d-hesap").onclick = () => {
   const dT = topB - topA;
   const tablo = `<table class="kars"><tr><th>Toner</th><th>A (mevcut)</th><th>B (aday)</th><th>Fark g</th><th>Fark %</th></tr>${satir}<tr class="top"><td><b>Toplam</b></td><td class="num">${topA.toFixed(1)}</td><td class="num">${topB.toFixed(1)}</td><td class="num">${dT >= 0 ? "+" : ""}${dT.toFixed(1)}</td><td class="num"></td></tr></table>`;
   out += "\n\nNot: eksen çelişirse (bir açı aç, öteki koyult diyorsa) en kötü açıdan başla, tek turda hepsini kapatmaya çalışma. Farklı ışıkta kontrol et.";
-  $("d-sonuc").innerHTML = out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + tablo;
+  // --- sade dilde açıklama (katlanabilir) ---
+  const cumle = h => {
+    if (h.dE < 1) return `${h.g}° (${AD[h.g]}): fark yok, bu açı tamam.`;
+    let s = `${h.g}° (${AD[h.g]}): fark ${h.dE.toFixed(1)} — ${h.dE <= 2 ? "sınırda, gözle karar ver." : "düzeltme gerek. "}`;
+    if (Math.abs(h.dL) >= 1) s += h.dL > 0 ? `Seninki ${h.dL.toFixed(1)} birim AÇIK → koyultmak lazım. ` : `Seninki ${Math.abs(h.dL).toFixed(1)} birim KOYU → açmak lazım. `;
+    if (Math.abs(h.da) >= 0.5) s += h.da > 0 ? "KIRMIZIYA kaymış. " : "YEŞİLE kaymış. ";
+    if (Math.abs(h.db) >= 0.5) s += h.db > 0 ? "SARIYA kaymış. " : "MAVİYE kaymış. ";
+    if (h.dC <= -1) s += "Referanstan daha KİRLİ/mat görünüyor. ";
+    return s;
+  };
+  let acik = `<details class="acik"><summary>🔍 Sade dille anlat (dokunarak aç)</summary>`;
+  if (hata.some(h => h.dE > 12 || Math.abs(h.dL) > 15 || Math.abs(h.da) > 15 || Math.abs(h.db) > 15))
+    acik += `<b>⚠ Değerler olağandışı büyük — önce kutuları ham metinle karşılaştır. Eksi işareti yutulmuş olabilir; yanlış girişten çıkan öneri yanlış olur.</b><br><br>`;
+  acik += `Önce ${kotu.g}° düzelir, çünkü fark en büyük orada. Tek turda her açıyı kapatmaya çalışma.<br><br>`;
+  acik += hata.map(cumle).join("<br>");
+  acik += `<br><br><small>ΔL = açıklık (+açık / −koyu) • Δa = kırmızı(+) / yeşil(−) • Δb = sarı(+) / mavi(−) • ΔC eksi = kirli • ΔE 1'in altı iyi.</small></details>`;
+  $("d-sonuc").innerHTML = out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + tablo + acik;
 };
